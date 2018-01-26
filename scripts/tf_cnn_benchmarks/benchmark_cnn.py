@@ -1275,7 +1275,8 @@ class BenchmarkCNN(object):
     # Running summaries and training operations in parallel could run out of
     # GPU memory.
     saver = tf.train.Saver(
-        self.variable_mgr.savable_variables(), save_relative_paths=True)
+        self.variable_mgr.savable_variables(), save_relative_paths=True,
+        max_to_keep=0)
     ready_for_local_init_op = None
     if self.job_name and not self.single_session:
       # In distributed mode, we don't want to run local_var_init_op_group until
