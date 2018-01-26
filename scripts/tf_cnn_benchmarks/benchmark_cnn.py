@@ -53,6 +53,9 @@ from cnn_util import log_fn
 from models import model_config
 from platforms import util as platforms_util
 
+import wandb
+wandb_run = wandb.init()
+
 
 _DEFAULT_NUM_BATCHES = 100
 
@@ -544,13 +547,25 @@ def benchmark_one_step(sess,
   train_time = time.time() - start_time
   step_train_times.append(train_time)
   if step >= 0 and (step == 0 or (step + 1) % params.display_every == 0):
+    stats = {}
+    stats['step'] = step+1
+    stats['loss'] = lossval
+    speed_info = get_perf_timing_str(batch_size, step_train_times)
+    stats['speed_mean'] = speed_info[0]
+    stats['speed_uncertainty'] = speed_info[1]
+    stats['speed_jitter'] = speed_info[2]
+    speed_str = speed_info[3]
     log_str = '%i\t%s\t%.*f' % (
-        step + 1, get_perf_timing_str(batch_size, step_train_times),
+        step + 1, speed_str,
         LOSS_AND_ACCURACY_DIGITS_TO_SHOW, lossval)
     if 'top_1_accuracy' in results:
+      stats['t1_acc'] = results['top_1_accuracy']
+      stats['t5_acc'] = results['top_5_accuracy']
       log_str += '\t%.*f\t%.*f' % (
           LOSS_AND_ACCURACY_DIGITS_TO_SHOW, results['top_1_accuracy'],
           LOSS_AND_ACCURACY_DIGITS_TO_SHOW, results['top_5_accuracy'])
+    wandb_run.history.add(stats)
+    wandb_run.summary.update(stats)
     log_fn(log_str)
   if trace_filename and step == -1:
     log_fn('Dumping trace to %s' % trace_filename)
@@ -571,8 +586,8 @@ def get_perf_timing_str(batch_size, step_train_times, scale=1):
     speed_uncertainty = np.std(speeds) / np.sqrt(float(len(speeds)))
     speed_madstd = 1.4826 * np.median(np.abs(speeds - np.median(speeds)))
     speed_jitter = speed_madstd
-    return ('images/sec: %.1f +/- %.1f (jitter = %.1f)' %
-            (speed_mean, speed_uncertainty, speed_jitter))
+    return (speed_mean, speed_uncertainty, speed_jitter, ('images/sec: %.1f +/- %.1f (jitter = %.1f)' %
+            (speed_mean, speed_uncertainty, speed_jitter)))
   else:
     return 'images/sec: %.1f' % speed_mean
 
@@ -826,6 +841,7 @@ class BenchmarkCNN(object):
     Raises:
       ValueError: Unsupported params settings.
     """
+    wandb_run.config.update(params._asdict())
     self.params = params
     self.dataset = dataset or datasets.create_dataset(self.params.data_dir,
                                                       self.params.data_name)
